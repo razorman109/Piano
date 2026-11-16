@@ -363,6 +363,27 @@ function parseXML(text,fallbackTitle){
   return sc;
 }
 
+/* ---------- Morceaux en plusieurs partitions ---------- */
+/* Un morceau peut tenir sur plusieurs pages. On les range par le numéro
+   trouvé dans leur nom, puis on met les mesures bout à bout. */
+function partsOf(p){return (p.parts&&p.parts.length)?p.parts:[{xml:p.xml,nom:p.title||''}];}
+function numPage(nom){const m=String(nom).match(/\d+/g);return m?+m[m.length-1]:0;}
+function norme(t){
+  return String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/\bpages?\b/g,' ').replace(/\d+/g,' ').replace(/[^a-z]+/g,' ').trim();
+}
+function parseMorceau(p){
+  const ps=partsOf(p).slice().sort((a,b)=>numPage(a.nom)-numPage(b.nom));
+  const sc=parseXML(ps[0].xml,p.title);
+  for(let k=1;k<ps.length;k++){
+    const b=parseXML(ps[k].xml,p.title), off=sc.mlen.length;
+    b.notes.forEach(n=>{n.m+=off;sc.notes.push(n);});
+    b.mlen.forEach(l=>sc.mlen.push(l));
+  }
+  sc.title=p.title;
+  return sc;
+}
+
 /* ---------- Préparation du modèle ---------- */
 function finish(sc){
   sc.tempo=sc.tempo||90;sc.fifths=sc.fifths||0;
@@ -749,23 +770,26 @@ function step(d){
   if(loop.on){const r=loopRange(),lo=firstEventAt(r.a);let hi=firstEventAt(r.b)-1;if(hi<lo)hi=lo;
     if(i>hi)i=lo;if(i<lo)i=d<0?(idx===lo?hi:lo):lo;}
   i=Math.max(0,Math.min(events.length-1,i));
+  /* la dernière note vient d'être jouée : on la laisse sonner avant le bilan */
+  if(i===idx&&d>0&&!loop.on&&!fixing&&idx===events.length-1&&events.length>3){
+    suivi(idx);
+    clearTimeout(finishT);finishT=setTimeout(()=>{if($('panel').hidden)bilan();},3000);
+    return;
+  }
   if(i===idx&&d!==0&&!loop.on)return;
   const depuis=idx;
   idx=i;show(true);
   if(d>0)suivi(depuis);
   if(!mic.on&&$('snd').checked&&audio()){const k=spq();events[idx].notes.forEach(n=>tone(n.midi,ac.currentTime+.01,Math.min(n.sd*k,1.4)));}
-  if(d>0&&!loop.on&&!fixing&&idx===events.length-1&&events.length>3){
-    clearTimeout(finishT);finishT=setTimeout(()=>{if($('panel').hidden)bilan();},900);
-  }
 }
-/* Suivi silencieux : une note qui traîne bien plus longtemps que sa durée
-   compte comme une hésitation sur sa mesure. Rien ne s'affiche pendant le jeu. */
+/* Suivi silencieux. Lire lentement n'est pas une faute : seul un arrêt vraiment
+   long compte, et une fausse note entendue au micro. Rien ne s'affiche pendant le jeu. */
 function suivi(depuis){
   if(!sess)return;
   const now=Date.now(), ev=events[depuis];
   if(lastAdv&&ev){
     const dur=Math.max(...ev.notes.map(n=>n.sd))*spq()*1000;
-    if(now-lastAdv>Math.max(1800,dur*3))sess.hes[ev.m]=(sess.hes[ev.m]||0)+1;
+    if(now-lastAdv>Math.max(8000,dur*6))sess.lent[ev.m]=(sess.lent[ev.m]||0)+1;
   }
   lastAdv=now;sess.notes++;
 }
@@ -784,7 +808,7 @@ function fillSelect(){
 function load(id){
   if(playing)stopPlay();if(mic.on)micStop();say('');
   let sc;
-  try{sc=id==='demo'?demo():parseXML(lib[+id.slice(1)].xml,lib[+id.slice(1)].title);}
+  try{sc=id==='demo'?demo():parseMorceau(lib[+id.slice(1)]);}
   catch(e){say(e.message);id='demo';sc=demo();}
   current=id;sel=[];undoStack=[];lastAdv=0;clearTimeout(finishT);
   if(id==='demo')edits=demoEdits;
@@ -1031,7 +1055,7 @@ function listenLoop(){
   /* une frappe qui n'a rien validé en une seconde : c'était une fausse note */
   if(mic.hit&&now-mic.hitAt>900){
     mic.hit=false;
-    if(sess&&events[idx])sess.hes[events[idx].m]=(sess.hes[events[idx].m]||0)+1;
+    if(sess&&events[idx])sess.faux[events[idx].m]=(sess.faux[events[idx].m]||0)+1;
   }
 
   if(e<quiet){heard('');mic.ok=0;after();return;}
@@ -1113,12 +1137,42 @@ function panneauDepart(){
   $('pImport').onclick=()=>$('file').click();
   $('pGo').onclick=()=>{fermer();if(pick!==current)load(pick);else{idx=0;show(false);}nouvelleSeance();};
 }
-function nouvelleSeance(){sess={t0:Date.now(),passes:sess?sess.passes:0,hes:{},notes:0};lastAdv=0;}
+function panneauFusion(j,part,sc){
+  const p=lib[j], pages=partsOf(p).length;
+  ouvrir(`
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <h2 class="ph2" style="text-align:left">Le même morceau ?</h2>
+      <p class="psub">« ${esc(p.title)} » est déjà dans ta bibliothèque${pages>1?', en '+pages+' parties':''}.</p>
+    </div>
+    <p style="margin:0;font-size:16px;line-height:1.45;color:var(--lab)">Cette partition peut être mise à la suite de l'autre : le morceau se jouera alors d'un seul tenant, et les mesures continueront de se compter sans repartir de 1.</p>
+    <div class="pcol">
+      <button type="button" class="pbtn" id="fSuite">La mettre à la suite</button>
+      <div class="prowb">
+        <button type="button" class="pbtn2" id="fApart">La garder à part</button>
+        <button type="button" class="pbtn2" id="fRien">Annuler</button>
+      </div>
+    </div>`);
+  $('fSuite').onclick=()=>{
+    p.parts=partsOf(p).concat([part]);delete p.xml;
+    p.mes=(p.mes||0)+sc.mlen.length;store();
+    fermer();load('p'+j);nouvelleSeance();
+  };
+  $('fApart').onclick=()=>{
+    lib.push({title:part.nom,parts:[part],mes:sc.mlen.length});store();
+    fermer();load('p'+(lib.length-1));nouvelleSeance();
+  };
+  $('fRien').onclick=()=>panneauDepart();
+}
+function nouvelleSeance(){sess={t0:Date.now(),passes:sess?sess.passes:0,faux:{},lent:{},notes:0};lastAdv=0;}
 function bilan(){
   if(!sess)return;
   if(mic.on)micStop();if(playing)stopPlay();
   sess.passes++;
-  const revoir=Object.keys(sess.hes).filter(m=>sess.hes[m]>=2).map(Number).sort((a,b)=>a-b);
+  /* une mesure n'est retenue qu'à partir de deux accrocs : fausses notes ou arrêts très longs */
+  const cpt={};
+  for(const m in sess.faux)cpt[m]=(cpt[m]||0)+sess.faux[m];
+  for(const m in sess.lent)cpt[m]=(cpt[m]||0)+sess.lent[m];
+  const revoir=Object.keys(cpt).filter(m=>cpt[m]>=2).map(Number).sort((a,b)=>a-b);
   const M=S.mlen.length;
   const n=revoir.length===0?3:(revoir.length<=Math.max(1,Math.ceil(M*0.2))?2:1);
   const cle=current==='demo'?'demo':S.title;
@@ -1197,9 +1251,11 @@ $('importBtn').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault()
 $('file').onchange=async e=>{
   const f=e.target.files[0];e.target.value='';if(!f)return;say('');
   try{
-    const xml=await readFile(f);const name=f.name.replace(/\.[^.]+$/,'');
-    const sc=parseXML(xml,name);
-    lib.push({title:sc.title,xml,mes:sc.mlen.length});store();
+    const xml=await readFile(f);const nom=f.name.replace(/\.[^.]+$/,'');
+    const sc=parseXML(xml,nom);
+    const j=lib.findIndex(p=>norme(p.title)===norme(sc.title));
+    if(j>=0){panneauFusion(j,{xml,nom},sc);return;}
+    lib.push({title:sc.title,parts:[{xml,nom}],mes:sc.mlen.length});store();
     fermer();load('p'+(lib.length-1));nouvelleSeance();
   }catch(err){say(err.message||'Ce fichier ne peut pas être ouvert.');}
 };
