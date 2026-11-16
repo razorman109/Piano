@@ -113,6 +113,8 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ink)}
 .pnote.rev > span{font-size:15px;font-weight:600;color:#5C4A08}
 .pchips{display:flex;gap:8px;flex-wrap:wrap}
 .pchip{font:600 17px var(--disp);padding:7px 15px;border-radius:13px;background:#FBE7A8;color:#4A3B05}
+.pbtn2.dang{color:#9A2B10;box-shadow:inset 0 0 0 1.5px #EFC3B5}
+#suppr{color:#9A2B10}
 .pcol{display:flex;flex-direction:column;gap:9px}
 .prowb{display:flex;gap:9px}
 @media (max-height:560px){ .pcard{gap:12px;padding:20px 22px} .pstars svg{width:40px;height:40px} }
@@ -220,6 +222,7 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ink)}
         <button class="btn sq" id="zIn" aria-label="Agrandir">+</button>
       </span>
       <span class="sp"></span>
+      <button class="btn small" id="suppr">Supprimer la note</button>
       <button class="btn small" id="undo">Annuler la correction</button>
     </div>
   </footer>
@@ -413,10 +416,11 @@ function setDia(n,dia){n.dia=dia;n.oct=Math.floor(dia/7);n.step='CDEFGAB'[dia-n.
 function applyEditsTo(notes,map){
   notes.forEach(n=>{
     const o=n.o;if(!o)return;
-    n.finger=o.finger;
+    n.finger=o.finger;n.gone=false;
     if(!n.rest){n.alter=o.alter;n.acc=o.acc;n.step=o.step;n.oct=o.oct;n.dia=o.dia;reMidi(n);}
     const e=map[n.id];if(!e)return;
     if(e.finger!==undefined)n.finger=e.finger;
+    if(e.del)n.gone=true;
     if(n.rest)return;
     if(e.alter!==undefined){n.alter=e.alter;n.acc=e.alter>0?'sharp':e.alter<0?'flat':'natural';}
     if(e.dia!==undefined)setDia(n,e.dia);else reMidi(n);
@@ -450,7 +454,7 @@ function build(){
 
   /* accords */
   const cmap=new Map(),chords=[];
-  S.notes.forEach(n=>{if(n.rest)return;const k=[n.m,n.staff,n.voice,Math.round(n.p*960)].join('|');
+  S.notes.forEach(n=>{if(n.rest||n.gone)return;const k=[n.m,n.staff,n.voice,Math.round(n.p*960)].join('|');
     let c=cmap.get(k);if(!c){c={notes:[],m:n.m,p:n.p,d:n.d,staff:n.staff,voice:n.voice,type:n.type,dots:n.dots,x:xOfTime(n.t)};cmap.set(k,c);chords.push(c);}
     c.notes.push(n);});
   const voices=new Map();
@@ -580,7 +584,7 @@ function build(){
 
 function buildEvents(){
   const map=new Map();
-  S.notes.forEach(n=>{if(n.rest||n.silent)return;if(hand!=='both'&&String(n.staff)!==hand)return;
+  S.notes.forEach(n=>{if(n.rest||n.silent||n.gone)return;if(hand!=='both'&&String(n.staff)!==hand)return;
     const k=Math.round(n.t*960);if(!map.has(k))map.set(k,{t:n.t,notes:[]});map.get(k).notes.push(n);});
   events=[...map.values()].sort((a,b)=>a.t-b.t);
   events.forEach(e=>{e.x=xOfTime(e.t);e.m=measureAt(e.t);});
@@ -589,7 +593,7 @@ function buildEvents(){
 /* ---------- Clavier ---------- */
 function buildKeyboard(){
   const kb=$('kb');kb.textContent='';keys=new Map();
-  const mids=S.notes.filter(n=>!n.rest).map(n=>n.midi);
+  const mids=S.notes.filter(n=>!n.rest&&!n.gone).map(n=>n.midi);
   let lo=Math.floor(Math.min(...mids)/12)*12,hi=Math.ceil((Math.max(...mids)+1)/12)*12-1;
   while(hi-lo<35){if(lo>36)lo-=12;else hi+=12;if(hi-lo<35&&hi<96)hi+=12;}
   const W=24,KH=KBH;let nW=0;const blacks=[];whiteList=[];
@@ -610,7 +614,7 @@ function planHands(){
   if(!whiteList.length)return;
   const wIdx=m=>{const i=whiteList.indexOf(m);return i<0?whiteList.indexOf(m-1):i;};
   for(const st of [1,2]){
-    const ns=S.notes.filter(n=>!n.rest&&!n.silent&&n.staff===st).sort((a,b)=>a.t-b.t);
+    const ns=S.notes.filter(n=>!n.rest&&!n.silent&&!n.gone&&n.staff===st).sort((a,b)=>a.t-b.t);
     const groups=[];let g=null;
     for(const n of ns){
       const w=wIdx(n.midi);if(w<0){n.hg=null;continue;}
@@ -828,13 +832,13 @@ function setHand(h,quiet){
 }
 
 /* ---------- Correction de la partition ---------- */
-function selNotes(){return sel.map(id=>S.notes[id]).filter(n=>n&&!n.rest);}
+function selNotes(){return sel.map(id=>S.notes[id]).filter(n=>n&&!n.rest&&!n.gone);}
 function targets(){
   const a=selNotes();if(!a.length)return [];
   if(scope==='one')return a;
   const n0=a[0];
-  if(scope==='measure')return S.notes.filter(n=>!n.rest&&n.staff===n0.staff&&n.m===n0.m);
-  return S.notes.filter(n=>!n.rest&&n.staff===n0.staff&&n.t>=n0.t-1e-9);
+  if(scope==='measure')return S.notes.filter(n=>!n.rest&&!n.gone&&n.staff===n0.staff&&n.m===n0.m);
+  return S.notes.filter(n=>!n.rest&&!n.gone&&n.staff===n0.staff&&n.t>=n0.t-1e-9);
 }
 function rec(n,k,v){if(!edits[n.id])edits[n.id]={};edits[n.id][k]=v;}
 function pushUndo(){undoStack.push(JSON.stringify(edits));if(undoStack.length>40)undoStack.shift();}
@@ -859,6 +863,16 @@ function applyAcc(v){
   const ts=targets();if(!ts.length)return;
   pushUndo();ts.forEach(n=>{n.alter=v;n.acc=v>0?'sharp':v<0?'flat':'natural';reMidi(n);rec(n,'alter',v);});
   saveEdits();recall();preview();
+}
+/* Supprimer une note lue à tort : un gribouillage sur la feuille, une tache.
+   Elle disparaît de la partition, du clavier et de l'écoute, et Annuler la ramène. */
+function applySuppr(){
+  const ts=targets();if(!ts.length)return;
+  pushUndo();ts.forEach(n=>{n.gone=true;rec(n,'del',true);});
+  sel=[];saveEdits();
+  const t=events[idx]?events[idx].t:0;
+  build();let i=firstEventAt(t);if(i>=events.length)i=Math.max(0,events.length-1);idx=i;
+  show(false);drawSel();updateInfo();
 }
 function applyFinger(f){
   const a=selNotes();if(!a.length)return;
@@ -914,7 +928,7 @@ function updateInfo(){
 function pickNote(x,y){
   let best=null,bd=1e9;
   S.notes.forEach(n=>{
-    if(n.rest||n.silent||n.x===undefined)return;
+    if(n.rest||n.silent||n.gone||n.x===undefined)return;
     if(hand!=='both'&&String(n.staff)!==hand)return;
     const d=Math.hypot(n.x-x,(n.y-y)*0.7);if(d<bd){bd=d;best=n;}
   });
@@ -1129,13 +1143,78 @@ function panneauDepart(){
         <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="var(--indigo)" stroke-width="2.2" stroke-linecap="round"/></svg>
         <span>Importer une partition</span></button>
     </div>
-    <button type="button" class="pbtn" id="pGo">Commencer</button>`);
+    <div class="pcol">
+      <button type="button" class="pbtn" id="pGo">Commencer</button>
+      <button type="button" class="pbtn2" id="pBib" style="flex:0 0 auto">Mes partitions</button>
+    </div>`);
   $('panel').querySelectorAll('.prow').forEach(b=>b.onclick=()=>{
     pick=b.dataset.id;
     $('panel').querySelectorAll('.prow').forEach(x=>x.setAttribute('aria-pressed',x===b));
   });
   $('pImport').onclick=()=>$('file').click();
+  $('pBib').onclick=()=>{selBib=[];confirmSup=false;panneauBiblio();};
   $('pGo').onclick=()=>{fermer();if(pick!==current)load(pick);else{idx=0;show(false);}nouvelleSeance();};
+}
+/* Onglet Partitions : ranger, fusionner, supprimer. */
+let selBib=[], confirmSup=false;
+function rechargerApres(objetCourant){
+  let nid='demo';
+  if(objetCourant){const k=lib.indexOf(objetCourant);if(k>=0)nid='p'+k;}
+  load(nid);nouvelleSeance();
+}
+function panneauBiblio(){
+  if(playing)stopPlay();if(mic.on)micStop();if(fixing)setFixing(false);
+  const lignes=lib.length?lib.map((p,i)=>{
+    const np=partsOf(p).length;
+    return `<button type="button" class="prow" data-i="${i}" aria-pressed="${selBib.includes(i)}">
+      <span class="pdot"></span>
+      <span style="display:flex;flex-direction:column;gap:3px;flex:1 1 auto">
+        <span class="pnom">${esc(p.title)}</span>
+        <span class="pinfo">${p.mes?p.mes+' mesures':'partition importée'}${np>1?' · '+np+' parties':''}</span>
+      </span></button>`;}).join('')
+    : `<p style="margin:0;font-size:16px;color:var(--lab)">Aucune partition importée pour l'instant. Les morceaux convertis sur l'ordinateur s'ajoutent ici.</p>`;
+  const n=selBib.length;
+  ouvrir(`
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <h2 class="ph2" style="text-align:left">Mes partitions</h2>
+      <p class="psub">${n?(n===1?'1 partition choisie.':n+' partitions choisies.'):'Touche une partition pour la choisir.'}</p>
+    </div>
+    <div class="pcol">${lignes}
+      <button type="button" class="pghost" id="bImport">
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="var(--indigo)" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span>Importer une partition</span></button>
+    </div>
+    <div class="pcol">
+      ${n>=2?`<button type="button" class="pbtn" id="bFus">Fusionner ces ${n} partitions</button>`:''}
+      <div class="prowb">
+        ${n>=1?`<button type="button" class="pbtn2 dang" id="bSup">${confirmSup?'Confirmer la suppression':(n===1?'Supprimer':'Supprimer les '+n)}</button>`:''}
+        <button type="button" class="pbtn2" id="bRetour">Retour</button>
+      </div>
+    </div>`);
+  $('panel').querySelectorAll('.prow').forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.i, k=selBib.indexOf(i);
+    if(k>=0)selBib.splice(k,1);else selBib.push(i);
+    confirmSup=false;panneauBiblio();
+  });
+  $('bImport').onclick=()=>$('file').click();
+  $('bRetour').onclick=()=>{selBib=[];confirmSup=false;panneauDepart();};
+  if($('bFus'))$('bFus').onclick=()=>{
+    const ids=selBib.slice().sort((a,b)=>a-b), base=lib[ids[0]];
+    let parts=partsOf(base).slice(), mes=base.mes||0;
+    for(let k=1;k<ids.length;k++){const p=lib[ids[k]];parts=parts.concat(partsOf(p));mes+=(p.mes||0);}
+    base.parts=parts;delete base.xml;base.mes=mes;
+    for(let k=ids.length-1;k>=1;k--)lib.splice(ids[k],1);
+    selBib=[];confirmSup=false;store();
+    fermer();rechargerApres(base);
+  };
+  if($('bSup'))$('bSup').onclick=()=>{
+    if(!confirmSup){confirmSup=true;panneauBiblio();return;}
+    const cur=current==='demo'?null:lib[+current.slice(1)];
+    selBib.slice().sort((a,b)=>b-a).forEach(i=>lib.splice(i,1));
+    selBib=[];confirmSup=false;store();
+    rechargerApres(cur&&lib.indexOf(cur)>=0?cur:null);
+    panneauBiblio();
+  };
 }
 function panneauFusion(j,part,sc){
   const p=lib[j], pages=partsOf(p).length;
@@ -1232,6 +1311,7 @@ $('oUp').onclick=()=>applyShift(7);
 $('oDn').onclick=()=>applyShift(-7);
 document.querySelectorAll('#editBar [data-acc]').forEach(b=>b.onclick=()=>applyAcc(+b.dataset.acc));
 document.querySelectorAll('#editBar [data-fg]').forEach(b=>b.onclick=()=>applyFinger(b.dataset.fg));
+$('suppr').onclick=applySuppr;
 $('undo').onclick=undo;
 $('zIn').onclick=()=>setZoom(zoom+0.3);
 $('zOut').onclick=()=>setZoom(zoom-0.3);
