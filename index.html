@@ -545,28 +545,42 @@ function drawHands(ev){
     const cur=ev.notes.filter(n=>n.staff===st);
     if(!cur.length)continue;
     const win=S.notes.filter(n=>!n.rest&&!n.silent&&n.staff===st&&n.m===ev.m);
+    const wIdx=m=>{let i=whiteList.indexOf(m);return i<0?whiteList.indexOf(m-1):i;};
     const anchor=cur.find(n=>n.finger&&+n.finger>=1&&+n.finger<=5);
-    const f0=anchor?+anchor.finger:(st===1?1:5);
-    const k0=anchor?anchor.midi:(win.length?Math.min(...win.map(n=>n.midi)):cur[0].midi);
-    let wi=whiteList.indexOf(k0);if(wi<0)wi=whiteList.indexOf(k0-1);if(wi<0)continue;
+    /* La note en cours sert toujours de repère, donc la main dessinée la contient forcément. */
+    const anc=anchor||cur.reduce((a,b)=>(st===1?(b.midi<a.midi?b:a):(b.midi>a.midi?b:a)),cur[0]);
+    const wi=wIdx(anc.midi);if(wi<0)continue;
+    let f0;
+    if(anchor)f0=+anchor.finger;
+    else{
+      const ws=win.map(n=>wIdx(n.midi)).filter(i=>i>=0);
+      const low=ws.length?Math.min(...ws,wi):wi;
+      const off=Math.min(4,Math.max(0,wi-low));
+      f0=st===1?1+off:5-off;
+    }
+    f0=Math.max(1,Math.min(5,f0));
     const dir=st===1?1:-1, col=st===1?'var(--rh)':'var(--lh)', sure=!!anchor;
+    const ancK=keys.get(anc.midi), ancBlack=!!(ancK&&ancK.black);
     const pos=[];
     for(let f=1;f<=5;f++){const j=wi+dir*(f-f0);if(j>=0&&j<whiteList.length)pos.push({f,midi:whiteList[j]});}
     if(!pos.length)continue;
-    const xs=pos.map(p=>keys.get(p.midi).cx);
+    const xs=pos.map(p=>keys.get(p.midi).cx).concat(ancK?[ancK.cx]:[]);
     el('rect',{x:Math.min(...xs)-12,y:2,width:Math.max(...xs)-Math.min(...xs)+24,height:KBH-4,rx:9,
       class:'hb',stroke:col,'stroke-dasharray':sure?'none':'5 4',opacity:sure?.8:.45},handG);
     pos.forEach(p=>{
+      if(ancBlack&&p.f===f0)return;
       const k=keys.get(p.midi);if(!k)return;
       const on=cur.some(n=>n.midi===p.midi);
       el('circle',{cx:k.cx,cy:86,r:9.5,fill:on?col:'var(--paper)',stroke:col,'stroke-width':1.6,opacity:sure?1:.6},handG);
       const t=el('text',{x:k.cx,y:90,class:'hc',fill:on?'#fff':col,opacity:sure?1:.7},handG);t.textContent=p.f;
     });
     cur.forEach(n=>{
-      if(pos.some(p=>p.midi===n.midi))return;
-      const k=keys.get(n.midi);if(!k)return;const cy=k.black?54:86;
+      const k=keys.get(n.midi);if(!k)return;
+      if(!k.black&&pos.some(p=>p.midi===n.midi))return;
+      const cy=k.black?54:86;
       el('circle',{cx:k.cx,cy,r:9.5,fill:col,stroke:col,'stroke-width':1.6},handG);
-      if(n.finger){const t=el('text',{x:k.cx,y:cy+4,class:'hc',fill:'#fff'},handG);t.textContent=n.finger;}
+      const lab=n.finger||(n===anc?String(f0):'');
+      if(lab){const t=el('text',{x:k.cx,y:cy+4,class:'hc',fill:'#fff'},handG);t.textContent=lab;}
     });
   }
 }
@@ -821,17 +835,38 @@ function peakIn(arr,f,cents){
   let v=0;for(let i=lo;i<=hi;i++)if(arr[i]>v)v=arr[i];
   return v;
 }
+function fOf(midi){return 440*Math.pow(2,(midi-69)/12);}
 function strengthIn(arr,midi){
-  const f=440*Math.pow(2,(midi-69)/12);
+  const f=fOf(midi);
   return peakIn(arr,f,42)+0.6*peakIn(arr,2*f,42)+0.3*peakIn(arr,3*f,42);
 }
 function strength(midi){return strengthIn(mic.mag,midi);}
-function present(midi,ref){
+/* Comparer une note à ses voisines d'un demi-ton suppose de pouvoir les séparer.
+   En dessous de do3 l'analyse n'y arrive pas : deux demi-tons tombent dans la même
+   case de fréquence. On juge alors sur l'harmonique, deux ou quatre fois plus écartée. */
+function beatsNeighbours(midi){
+  const bw=ac.sampleRate/mic.an.fftSize;
+  for(const mul of [1,2,4]){
+    const f=fOf(midi)*mul;
+    if(f*0.0595<2.2*bw)continue;
+    const s=peakIn(mic.mag,f,42);
+    if(s<peakIn(mic.mag,fOf(midi-1)*mul,42)*1.15)return false;
+    if(s<peakIn(mic.mag,fOf(midi+1)*mul,42)*1.15)return false;
+    return true;
+  }
+  return true;
+}
+function present(midi,ref,attendues){
   const s=strength(midi);
   if(s<ref)return false;
-  if(s<strength(midi-1)*1.15||s<strength(midi+1)*1.15)return false;
-  /* ne pas prendre l'harmonique d'une note plus grave pour la note attendue */
-  for(const d of [12,19,24]){if(midi-d>=21&&strength(midi-d)>s*1.5)return false;}
+  if(!beatsNeighbours(midi))return false;
+  /* Ne pas prendre l'harmonique d'une note plus grave pour la note attendue —
+     sauf si cette grave fait elle-même partie de l'accord : dans do-mi-sol,
+     le sol est l'harmonique du do et doit quand même compter. */
+  for(const d of [12,19,24]){
+    const p=midi-d;
+    if(p>=21&&fOf(p)>55&&!attendues.has(p)&&strength(p)>s*1.5)return false;
+  }
   return true;
 }
 function flash(){
@@ -921,19 +956,25 @@ function listenLoop(){
   /* rien ne passe sans une frappe franche, et jamais deux notes dans la même seconde de son */
   if(!ev||now-mic.last<200||!mic.hit){dire();mic.ok=0;after();return;}
 
-  const moy=e/(hi-lo+1), ref=moy*30*Math.pow(0.7,mic.sens-5);
-  const bon=ev.notes.every(nt=>present(nt.midi,ref));
+  /* plus il y a de notes ensemble, plus l'énergie se répartit : on abaisse le seuil d'autant */
+  const nb=ev.notes.length, att=new Set(ev.notes.map(nt=>nt.midi));
+  const moy=e/(hi-lo+1), ref=moy*30*Math.pow(0.7,mic.sens-5)/(1+0.45*(nb-1));
+  const manque=ev.notes.filter(nt=>!present(nt.midi,ref,att));
   /* au moins une des notes attendues doit avoir monté à l'instant : c'est elle qu'on vient de frapper */
   const neuve=ev.notes.some(nt=>strengthIn(m,nt.midi)>strengthIn(sl,nt.midi)*1.35);
 
-  if(bon&&neuve){
+  if(!manque.length&&neuve){
     mic.ok++;
     if(mic.ok>=2){
       mic.ok=0;mic.hit=false;mic.last=now;
       heard(ev.notes.map(nt=>nameOf(nt.midi)).join(' + '),true);
       flash();step(1);
     }
-  }else{mic.ok=0;dire();}
+  }else{
+    mic.ok=0;
+    if(nb>1)heard(ev.notes.map(nt=>nameOf(nt.midi)+(manque.includes(nt)?' ✗':' ✓')).join('  '));
+    else dire();
+  }
   after();
 }
 
