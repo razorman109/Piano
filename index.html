@@ -3,13 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Piano pas à pas</title>
+<title>Piano Piano</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,800;1,500;1,600&family=Manrope:wght@400;500;600;700&display=swap">
 <style>
 :root{
-  /* Mise en page : titre, portée qui défile, clavier, commandes. Une couleur par main, tout le reste en noir et gris. */
+  /* Partition et clavier : sobres, noir et gris, une couleur par main.
+     Panneaux et commandes : crème, pastels et indigo. */
   --paper:#ffffff; --ink:#16181d; --mute:#c3c7ce; --line:#8d929c; --ui:#f1f2f5;
   --rh:#1f6feb; --lh:#e8590c; --loop:#fff0b3; --ok:#1a7f37; --sel:#7b2fbe;
-  --font:-apple-system,system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --cream:#FFF8EF; --ink2:#241F35; --mute2:#6A6280; --lab:#4A4458;
+  --indigo:#4F46E5; --lilac:#E7E6FF; --butter:#FFEFC2; --mint:#D4F3E3; --sky:#D8ECFF;
+  --gold:#F2B313; --goldoff:#E8E5EF;
+  --font:"Manrope",-apple-system,system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --disp:"Fraunces",Georgia,"Times New Roman",serif;
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -18,7 +26,7 @@ body{background:var(--paper);color:var(--ink);font:16px/1.3 var(--font);-webkit-
   -webkit-user-select:none;user-select:none;touch-action:manipulation}
 #app{height:100%;display:flex;flex-direction:column;gap:6px;padding:10px 16px 12px}
 header{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-header select{font:600 17px var(--font);color:var(--ink);background:var(--paper);border:0;padding:6px 4px;max-width:60vw}
+header select{font:800 20px var(--disp);color:var(--ink2);background:var(--paper);border:0;padding:6px 4px;max-width:60vw}
 #msg{color:#b42318;font-size:14px;flex-basis:100%}
 #msg:empty{display:none}
 .sp{flex:1}
@@ -30,7 +38,7 @@ footer{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .btn{font:600 16px var(--font);color:var(--ink);background:var(--ui);border:0;border-radius:10px;padding:11px 16px;min-height:44px;cursor:pointer}
 .btn:active{filter:brightness(.94)}
-.btn.primary{background:var(--ink);color:#fff;min-width:118px}
+.btn.primary{background:var(--indigo);color:#fff;min-width:118px}
 .btn.next{background:var(--paper);box-shadow:inset 0 0 0 2px var(--ink)}
 .btn[aria-pressed="true"]{background:var(--loop);box-shadow:inset 0 0 0 2px #e0b400}
 .btn.small{padding:6px 12px;min-height:36px;font-weight:500;font-size:14px}
@@ -63,6 +71,51 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ink)}
 .hb{fill:none;stroke-width:2}
 .hc{font:700 11px var(--font);text-anchor:middle;pointer-events:none}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+/* Panneaux de départ et de fin */
+#panel{position:fixed;inset:0;z-index:50;background:var(--cream);display:flex;align-items:center;
+  justify-content:center;padding:18px;overflow:auto;color:var(--ink2)}
+#panel[hidden]{display:none}
+.pblob{position:absolute;border-radius:50%;pointer-events:none}
+.pb1{top:-90px;left:-70px;width:240px;height:240px;background:var(--lilac)}
+.pb2{bottom:-90px;right:-60px;width:250px;height:250px;background:var(--mint)}
+.pcard{position:relative;width:min(600px,100%);background:#fff;border-radius:30px;padding:28px 30px;
+  box-shadow:0 16px 44px rgba(36,31,53,.09);display:flex;flex-direction:column;gap:18px}
+.ptitle{margin:0;font:800 clamp(30px,6vw,44px)/1.04 var(--disp);letter-spacing:-.02em}
+.ptitle i{font-weight:600;color:var(--indigo)}
+.ph2{margin:0;font:800 clamp(26px,5vw,36px)/1.1 var(--disp);letter-spacing:-.02em;text-align:center}
+.psub{margin:0;font:italic 500 19px var(--disp);color:var(--mute2)}
+.pmid{text-align:center}
+.pstars{display:flex;gap:8px;justify-content:center}
+.prow{appearance:none;-webkit-appearance:none;font-family:inherit;color:inherit;text-align:left;cursor:pointer;
+  display:flex;align-items:center;gap:14px;padding:16px 18px;border:0;border-radius:19px;width:100%;
+  background:#F7F6FA;box-shadow:inset 0 0 0 1px #E6E3EE}
+.prow[aria-pressed="true"]{background:var(--lilac);box-shadow:inset 0 0 0 2px var(--indigo)}
+.pdot{width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 2px #C7C2D6;flex:0 0 auto}
+.prow[aria-pressed="true"] .pdot{background:var(--indigo);box-shadow:none}
+.pnom{font-size:19px;font-weight:700}
+.pinfo{font-size:14px;color:var(--lab)}
+.pbtn{appearance:none;-webkit-appearance:none;font:800 21px var(--disp);cursor:pointer;width:100%;
+  min-height:60px;border:0;border-radius:20px;background:var(--indigo);color:#fff}
+.pbtn2{appearance:none;-webkit-appearance:none;font:600 16px var(--font);color:inherit;cursor:pointer;
+  min-height:54px;border:0;border-radius:20px;background:#fff;box-shadow:inset 0 0 0 1.5px #DCD8E8;
+  flex:1 1 0;padding:0 14px}
+.pghost{appearance:none;-webkit-appearance:none;font:500 16px var(--font);color:var(--lab);cursor:pointer;
+  display:flex;align-items:center;gap:12px;padding:15px 18px;border:0;border-radius:19px;width:100%;
+  background:#fff;box-shadow:inset 0 0 0 1.5px #DCD8E8;text-align:left}
+.ptiles{display:flex;gap:10px}
+.ptile{flex:1 1 0;border-radius:20px;padding:15px 16px;display:flex;flex-direction:column;gap:1px}
+.ptile b{font:800 27px var(--disp);font-variant-numeric:tabular-nums}
+.ptile em{font-style:normal;font-size:13px;font-weight:600;color:var(--lab)}
+.pnote{display:flex;flex-direction:column;gap:10px;padding:15px 18px;border-radius:20px}
+.pnote.ok{background:#EDFBF3;box-shadow:inset 0 0 0 1.5px #BCE8D1;color:#0B5C3E;font-weight:600;font-size:16px;
+  flex-direction:row;align-items:center;gap:11px}
+.pnote.rev{background:#FFF6DC;box-shadow:inset 0 0 0 1.5px #EEDCA4}
+.pnote.rev > span{font-size:15px;font-weight:600;color:#5C4A08}
+.pchips{display:flex;gap:8px;flex-wrap:wrap}
+.pchip{font:600 17px var(--disp);padding:7px 15px;border-radius:13px;background:#FBE7A8;color:#4A3B05}
+.pcol{display:flex;flex-direction:column;gap:9px}
+.prowb{display:flex;gap:9px}
+@media (max-height:560px){ .pcard{gap:12px;padding:20px 22px} .pstars svg{width:40px;height:40px} }
 /* partition */
 .ch{color:var(--ink)}
 .ch.off{color:var(--mute)}
@@ -83,6 +136,7 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ink)}
 </style>
 </head>
 <body>
+<div id="panel" role="dialog" aria-modal="true" hidden></div>
 <div id="app">
   <header>
     <label class="vh" for="piece">Morceau</label>
@@ -190,6 +244,7 @@ let loop={on:false,a:0,b:0};
 let ac=null, master=null, qStart=0, tStart=0, sched=0, raf=0;
 let lib=[], current='demo', edits={}, demoEdits={}, undoStack=[];
 let fixing=false, sel=[], scope='one', whiteList=[], handG=null;
+let sess=null, etoiles={}, lastAdv=0, finishT=0, pick='demo';
 
 function el(name,attrs,parent){const e=document.createElementNS(NS,name);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
 function say(t){$('msg').textContent=t||'';}
@@ -695,8 +750,24 @@ function step(d){
     if(i>hi)i=lo;if(i<lo)i=d<0?(idx===lo?hi:lo):lo;}
   i=Math.max(0,Math.min(events.length-1,i));
   if(i===idx&&d!==0&&!loop.on)return;
+  const depuis=idx;
   idx=i;show(true);
+  if(d>0)suivi(depuis);
   if(!mic.on&&$('snd').checked&&audio()){const k=spq();events[idx].notes.forEach(n=>tone(n.midi,ac.currentTime+.01,Math.min(n.sd*k,1.4)));}
+  if(d>0&&!loop.on&&!fixing&&idx===events.length-1&&events.length>3){
+    clearTimeout(finishT);finishT=setTimeout(()=>{if($('panel').hidden)bilan();},900);
+  }
+}
+/* Suivi silencieux : une note qui traîne bien plus longtemps que sa durée
+   compte comme une hésitation sur sa mesure. Rien ne s'affiche pendant le jeu. */
+function suivi(depuis){
+  if(!sess)return;
+  const now=Date.now(), ev=events[depuis];
+  if(lastAdv&&ev){
+    const dur=Math.max(...ev.notes.map(n=>n.sd))*spq()*1000;
+    if(now-lastAdv>Math.max(1800,dur*3))sess.hes[ev.m]=(sess.hes[ev.m]||0)+1;
+  }
+  lastAdv=now;sess.notes++;
 }
 function jump(i){idx=Math.max(0,Math.min(events.length-1,i));if(playing){begin(events[idx].t,.1,idx);show(false);scrollTo(events[idx].x,true);}else show(true);}
 
@@ -715,7 +786,7 @@ function load(id){
   let sc;
   try{sc=id==='demo'?demo():parseXML(lib[+id.slice(1)].xml,lib[+id.slice(1)].title);}
   catch(e){say(e.message);id='demo';sc=demo();}
-  current=id;sel=[];undoStack=[];
+  current=id;sel=[];undoStack=[];lastAdv=0;clearTimeout(finishT);
   if(id==='demo')edits=demoEdits;
   else{const p=lib[+id.slice(1)];edits=p.edits||(p.edits={});}
   S=finish(sc);idx=0;loop={on:false,a:0,b:0};
@@ -957,7 +1028,11 @@ function listenLoop(){
   if(fl>fThr&&!mic.inAtk){mic.inAtk=true;mic.hit=true;mic.hitAt=now;}
   else if(fl<fThr*0.5)mic.inAtk=false;
   mic.fAvg=mic.fAvg*0.93+fl*0.07;
-  if(mic.hit&&now-mic.hitAt>900)mic.hit=false;
+  /* une frappe qui n'a rien validé en une seconde : c'était une fausse note */
+  if(mic.hit&&now-mic.hitAt>900){
+    mic.hit=false;
+    if(sess&&events[idx])sess.hes[events[idx].m]=(sess.hes[events[idx].m]||0)+1;
+  }
 
   if(e<quiet){heard('');mic.ok=0;after();return;}
 
@@ -991,6 +1066,98 @@ function listenLoop(){
     else dire();
   }
   after();
+}
+
+/* ---------- Panneaux ---------- */
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function etoileSVG(px,on){
+  return `<svg width="${px}" height="${px}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4 6.2 20.5l1.1-6.5L2.6 9.4l6.5-.9z" fill="${on?'var(--gold)':'var(--goldoff)'}"/></svg>`;
+}
+function troisEtoiles(px,n){
+  let s='';for(let i=1;i<=3;i++)s+=etoileSVG(px,i<=n);
+  return `<span class="pstars" role="img" aria-label="${n} étoile${n>1?'s':''} sur 3">${s}</span>`;
+}
+function ouvrir(html){const p=$('panel');p.innerHTML='<div class="pblob pb1"></div><div class="pblob pb2"></div><div class="pcard">'+html+'</div>';p.hidden=false;}
+function fermer(){const p=$('panel');p.hidden=true;p.innerHTML='';}
+function listeMorceaux(){
+  const l=[{id:'demo',cle:'demo',titre:'Ode à la joie',info:'16 mesures · démonstration'}];
+  lib.forEach((p,i)=>l.push({id:'p'+i,cle:p.title,titre:p.title,info:(p.mes?p.mes+' mesures':'partition importée')}));
+  return l;
+}
+function panneauDepart(){
+  if(playing)stopPlay();if(mic.on)micStop();if(fixing)setFixing(false);
+  const l=listeMorceaux();
+  if(!l.some(x=>x.id===pick))pick=l[0].id;
+  const lignes=l.map(x=>{
+    const n=etoiles[x.cle]||0;
+    return `<button type="button" class="prow" data-id="${esc(x.id)}" aria-pressed="${x.id===pick}">
+      <span class="pdot"></span>
+      <span style="display:flex;flex-direction:column;gap:3px;flex:1 1 auto">
+        <span class="pnom">${esc(x.titre)}</span><span class="pinfo">${esc(x.info)}</span></span>
+      ${troisEtoiles(17,n)}</button>`;}).join('');
+  ouvrir(`
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <h1 class="ptitle">Piano <i>Piano</i></h1>
+      <p class="psub">Choisis ton morceau.</p>
+    </div>
+    <div class="pcol">${lignes}
+      <button type="button" class="pghost" id="pImport">
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="var(--indigo)" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span>Importer une partition</span></button>
+    </div>
+    <button type="button" class="pbtn" id="pGo">Commencer</button>`);
+  $('panel').querySelectorAll('.prow').forEach(b=>b.onclick=()=>{
+    pick=b.dataset.id;
+    $('panel').querySelectorAll('.prow').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  });
+  $('pImport').onclick=()=>$('file').click();
+  $('pGo').onclick=()=>{fermer();if(pick!==current)load(pick);else{idx=0;show(false);}nouvelleSeance();};
+}
+function nouvelleSeance(){sess={t0:Date.now(),passes:sess?sess.passes:0,hes:{},notes:0};lastAdv=0;}
+function bilan(){
+  if(!sess)return;
+  if(mic.on)micStop();if(playing)stopPlay();
+  sess.passes++;
+  const revoir=Object.keys(sess.hes).filter(m=>sess.hes[m]>=2).map(Number).sort((a,b)=>a-b);
+  const M=S.mlen.length;
+  const n=revoir.length===0?3:(revoir.length<=Math.max(1,Math.ceil(M*0.2))?2:1);
+  const cle=current==='demo'?'demo':S.title;
+  if(!etoiles[cle]||n>etoiles[cle]){etoiles[cle]=n;try{localStorage.setItem('ppp.stars',JSON.stringify(etoiles));}catch(e){}}
+  const min=Math.max(1,Math.round((Date.now()-sess.t0)/60000));
+  const bloc=revoir.length
+    ? `<div class="pnote rev"><span>${revoir.length===1?'Une mesure a demandé':revoir.length+' mesures ont demandé'} plusieurs essais.</span>
+       <div class="pchips">${revoir.map(m=>`<span class="pchip">mesure ${m+1}</span>`).join('')}</div></div>`
+    : `<div class="pnote ok"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" fill="none" stroke="#0E7A52" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+       <span>Aucune mesure n'a accroché cette fois.</span></div>`;
+  const principal=revoir.length
+    ? (revoir.length===1?`Revoir la mesure ${revoir[0]+1}`:`Revoir ces ${revoir.length} mesures`)
+    : 'Reprendre au début';
+  ouvrir(`
+    <div class="pmid" style="display:flex;flex-direction:column;align-items:center;gap:10px">
+      ${troisEtoiles(56,n)}
+      <div><h2 class="ph2">Morceau terminé</h2>
+      <p class="psub">${esc(S.title)}, du début à la fin.</p></div>
+    </div>
+    <div class="ptiles">
+      <div class="ptile" style="background:var(--butter)"><b>${min} min</b><em>au piano</em></div>
+      <div class="ptile" style="background:var(--mint)"><b>${M}</b><em>mesures jouées</em></div>
+      <div class="ptile" style="background:var(--sky)"><b>${sess.passes}</b><em>fois de suite</em></div>
+    </div>
+    ${bloc}
+    <div class="pcol">
+      <button type="button" class="pbtn" id="pMain">${esc(principal)}</button>
+      <div class="prowb">
+        <button type="button" class="pbtn2" id="pAgain">Reprendre au début</button>
+        <button type="button" class="pbtn2" id="pOther">Changer de morceau</button>
+      </div>
+    </div>`);
+  $('pMain').onclick=()=>{
+    fermer();nouvelleSeance();
+    if(revoir.length){loop.on=true;setLoop(revoir[0],revoir[revoir.length-1]);jump(firstEventAt(loopRange().a));}
+    else{loop.on=false;drawLoop();jump(0);}
+  };
+  $('pAgain').onclick=()=>{fermer();nouvelleSeance();loop.on=false;drawLoop();jump(0);};
+  $('pOther').onclick=()=>panneauDepart();
 }
 
 /* ---------- Commandes ---------- */
@@ -1032,7 +1199,8 @@ $('file').onchange=async e=>{
   try{
     const xml=await readFile(f);const name=f.name.replace(/\.[^.]+$/,'');
     const sc=parseXML(xml,name);
-    lib.push({title:sc.title,xml});store();load('p'+(lib.length-1));
+    lib.push({title:sc.title,xml,mes:sc.mlen.length});store();
+    fermer();load('p'+(lib.length-1));nouvelleSeance();
   }catch(err){say(err.message||'Ce fichier ne peut pas être ouvert.');}
 };
 $('score').addEventListener('click',e=>{
@@ -1064,6 +1232,7 @@ window.addEventListener('resize',()=>{if(S){fit();show(false);}});
 /* ---------- Démarrage ---------- */
 try{lib=JSON.parse(localStorage.getItem('ppp.lib')||'[]')||[];}catch(e){lib=[];}
 try{demoEdits=JSON.parse(localStorage.getItem('ppp.demoEdits')||'{}')||{};}catch(e){demoEdits={};}
+try{etoiles=JSON.parse(localStorage.getItem('ppp.stars')||'{}')||{};}catch(e){etoiles={};}
 let start='demo';
 try{const p=JSON.parse(localStorage.getItem('ppp.prefs')||'{}');
   if(p.speed){$('speed').value=p.speed;speed=p.speed/100;$('speedOut').textContent=p.speed+' %';}
@@ -1071,6 +1240,9 @@ try{const p=JSON.parse(localStorage.getItem('ppp.prefs')||'{}');
   if(p.sens){mic.sens=+p.sens;$('sens').value=p.sens;}
   if(p.current&&p.current!=='demo'&&lib[+p.current.slice(1)])start=p.current;}catch(e){}
 load(start);
+nouvelleSeance();
+pick=current;
+panneauDepart();
 })();
 </script>
 </body>
