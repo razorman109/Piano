@@ -161,8 +161,12 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--ink)}
         <button class="btn sq" data-fg="5">5</button>
         <button class="btn sq" data-fg="" aria-label="Aucun doigt">–</button>
       </span>
+      <span class="grp"><span class="lbl">zoom</span>
+        <button class="btn sq" id="zOut" aria-label="Réduire">−</button>
+        <button class="btn sq" id="zIn" aria-label="Agrandir">+</button>
+      </span>
       <span class="sp"></span>
-      <button class="btn small" id="undo">Annuler</button>
+      <button class="btn small" id="undo">Annuler la correction</button>
     </div>
   </footer>
 </div>
@@ -181,6 +185,7 @@ const FCLEF='M-8,0C-8,-8 6,-12 8,-1C10,12 -2,22 -10,27';
 
 let S=null, events=[], idx=0, hand='both', speed=1, playing=false;
 let mx=[], mw=[], total=0, HW=110, PH=170, vw=1000, music, cursorEl, loopEl, keys=new Map();
+let vbW=1000, vbH=292, vbY=0, zoom=1;
 let loop={on:false,a:0,b:0};
 let ac=null, master=null, qStart=0, tStart=0, sched=0, raf=0;
 let lib=[], current='demo', edits={}, demoEdits={}, undoStack=[];
@@ -245,7 +250,14 @@ function parseXML(text,fallbackTitle){
   const sc={title:txt(doc,'work-title')||txt(doc,'movement-title')||fallbackTitle||'Sans titre',tempo:0,fifths:null,beats:4,beatType:4,
     clefs:{},mlen:[],notes:[]};
   /* On ne garde que le piano : la partie à deux portées, sinon les deux dernières parties. */
-  let src;const two=parts.find(p=>{const x=p.querySelector('attributes > staves');return x&&+x.textContent>=2;});
+  const multi=p=>{
+    const x=p.querySelector('attributes > staves');
+    if(x&&+x.textContent>=2)return true;
+    if(p.querySelector('clef[number="2"]'))return true;
+    for(const e of p.querySelectorAll('note > staff'))if(+e.textContent>=2)return true;
+    return false;
+  };
+  let src;const two=parts.find(multi);
   if(two)src=[[two,0]];else if(parts.length>=2)src=[[parts[parts.length-2],1],[parts[parts.length-1],2]];else src=[[parts[0],0]];
   for(const [part,force] of src){
     let div=1,beats=4,bt=4;
@@ -306,12 +318,9 @@ function finish(sc){
   sc.mstart=[];let t=0;sc.mlen.forEach((l,m)=>{sc.mstart[m]=t;t+=l;});sc.endQ=t;
   sc.notes.forEach(n=>{n.t=sc.mstart[n.m]+n.p;if(!n.rest){n.dia=n.oct*7+STEP[n.step];n.midi=(n.oct+1)*12+SEMI[STEP[n.step]]+n.alter;n.sd=n.d;}});
   sc.notes.sort((a,b)=>a.t-b.t||a.staff-b.staff);
-  sc.notes.forEach((n,i)=>{n.id=i;const e=edits[i];if(!e)return;
-    if(e.finger!==undefined)n.finger=e.finger;
-    if(n.rest)return;
-    if(e.alter!==undefined){n.alter=e.alter;n.acc=e.alter>0?'sharp':e.alter<0?'flat':'natural';}
-    if(e.dia!==undefined)setDia(n,e.dia);else reMidi(n);
-  });
+  sc.notes.forEach((n,i)=>{n.id=i;
+    n.o={dia:n.dia,alter:n.alter,step:n.step,oct:n.oct,finger:n.finger,acc:n.acc};});
+  applyEditsTo(sc.notes,edits);
   const open=new Map();
   sc.notes.forEach(n=>{if(n.rest)return;const k=n.staff+'|'+n.midi;
     if(n.tieStop&&open.has(k)){const h=open.get(k);h.sd+=n.d;n.silent=true;n.tiePrev=h.lastSeg||h;h.lastSeg=n;if(!n.tieStart)open.delete(k);}
@@ -323,6 +332,20 @@ function finish(sc){
 
 function reMidi(n){n.midi=(n.oct+1)*12+SEMI[STEP[n.step]]+(n.alter||0);}
 function setDia(n,dia){n.dia=dia;n.oct=Math.floor(dia/7);n.step='CDEFGAB'[dia-n.oct*7];reMidi(n);}
+/* Remet chaque note telle qu'elle a été lue, puis réapplique les corrections.
+   Permet d'annuler sans relire tout le fichier. */
+function applyEditsTo(notes,map){
+  notes.forEach(n=>{
+    const o=n.o;if(!o)return;
+    n.finger=o.finger;
+    if(!n.rest){n.alter=o.alter;n.acc=o.acc;n.step=o.step;n.oct=o.oct;n.dia=o.dia;reMidi(n);}
+    const e=map[n.id];if(!e)return;
+    if(e.finger!==undefined)n.finger=e.finger;
+    if(n.rest)return;
+    if(e.alter!==undefined){n.alter=e.alter;n.acc=e.alter>0?'sharp':e.alter<0?'flat':'natural';}
+    if(e.dia!==undefined)setDia(n,e.dia);else reMidi(n);
+  });
+}
 
 /* ---------- Géométrie ---------- */
 function measureAt(q){for(let m=S.mstart.length-1;m>0;m--)if(q>=S.mstart[m]-1e-9)return m;return 0;}
@@ -551,8 +574,16 @@ function drawHands(ev){
 /* ---------- Affichage de la position ---------- */
 function fit(){
   const r=$('scoreWrap').getBoundingClientRect();if(!r.width||!r.height)return;
-  vw=Math.max(300,r.width*H/r.height);$('score').setAttribute('viewBox',`0 0 ${vw} ${H}`);
-  PH=Math.min(HW+64,HW+vw*.12+20);
+  vw=Math.max(300,r.width*H/r.height);
+  vbW=vw/zoom;vbH=H/zoom;vbY=(H-vbH)/2;
+  $('score').setAttribute('viewBox',`0 ${vbY} ${vbW} ${vbH}`);
+  PH=Math.min(HW+64,HW+vbW*.12+20);
+}
+function setZoom(z){
+  zoom=Math.max(1,Math.min(3,Math.round(z*10)/10));
+  if(!S)return;
+  fit();show(false);drawSel();
+  const a=selNotes()[0];if(a&&a.x!==undefined)scrollTo(a.x,false);
 }
 function scrollTo(x,anim){music.style.transition=anim?'transform .28s ease':'none';music.style.transform=`translate(${PH-x}px,0)`;}
 function show(anim){
@@ -710,26 +741,28 @@ function applyFinger(f){
   pushUndo();a.forEach(n=>{n.finger=f;rec(n,'finger',f);});
   saveEdits();recall();
 }
-function reparse(){
-  let sc;
-  try{sc=current==='demo'?demo():parseXML(lib[+current.slice(1)].xml,lib[+current.slice(1)].title);}catch(e){return;}
-  const keep=idx;S=finish(sc);build();
-  idx=Math.min(keep,Math.max(0,events.length-1));
-  show(false);drawSel();updateInfo();
-}
 function undo(){
   if(!undoStack.length)return;
   const obj=JSON.parse(undoStack.pop());
   for(const k in edits)delete edits[k];
   for(const k in obj)edits[k]=obj[k];
-  saveEdits();reparse();
+  saveEdits();applyEditsTo(S.notes,edits);recall();
 }
-function arrow(parent,x,y,dir,fn){
+function chip(parent,x,y,w,h,d,fn){
   const g=el('g',{class:'arw',transform:`translate(${x},${y})`},parent);
-  el('rect',{x:-22,y:-17,width:44,height:34,rx:11},g);
-  el('path',{d:dir<0?'M0,-8l12,14h-24z':'M0,8l12,-14h-24z',fill:'#fff'},g);
+  el('rect',{x:-w/2,y:-h/2,width:w,height:h,rx:11},g);
+  el('path',{d,fill:'#fff'},g);
   g.addEventListener('click',ev=>{ev.stopPropagation();fn();});
   return g;
+}
+function moveSel(d){
+  const a=selNotes()[0];if(!a)return;
+  const list=S.notes.filter(n=>!n.rest&&n.staff===a.staff).sort((p,q)=>p.t-q.t||p.dia-q.dia);
+  let i=list.indexOf(a);if(i<0)return;
+  i=Math.max(0,Math.min(list.length-1,i+d));const n=list[i];
+  sel=[n.id];drawSel();updateInfo();
+  if(n.x!==undefined)scrollTo(n.x,true);
+  if(audio())tone(n.midi,ac.currentTime+.01,.4);
 }
 function drawSel(){
   if(!music)return;
@@ -740,8 +773,11 @@ function drawSel(){
   const g=el('g',{class:'selmark'},music);
   targets().forEach(t=>{if(t.x===undefined)return;
     el('ellipse',{cx:t.x,cy:t.y,rx:RX+5,ry:RY+5,class:'sel-ring',opacity:t===n?1:.4},g);});
-  arrow(g,n.x,Math.max(20,Math.min(H-20,n.y-44)),-1,()=>applyShift(1));
-  arrow(g,n.x,Math.max(20,Math.min(H-20,n.y+44)),1,()=>applyShift(-1));
+  const cy=Math.max(24,Math.min(H-24,n.y));
+  chip(g,n.x,Math.max(20,Math.min(H-20,n.y-46)),44,34,'M0,-8l12,14h-24z',()=>applyShift(1));
+  chip(g,n.x,Math.max(20,Math.min(H-20,n.y+46)),44,34,'M0,8l12,-14h-24z',()=>applyShift(-1));
+  chip(g,n.x-56,cy,34,44,'M-7,0l13,-12v24z',()=>moveSel(-1));
+  chip(g,n.x+56,cy,34,44,'M7,0l-13,-12v24z',()=>moveSel(1));
 }
 function updateInfo(){
   const box=$('editInfo');
@@ -766,6 +802,7 @@ function setFixing(on){
   $('fix').setAttribute('aria-pressed',on);
   $('fix').textContent=on?'Terminer la correction':'Corriger la partition';
   $('editBar').hidden=!on;
+  setZoom(on?1.6:1);
   drawSel();updateInfo();
 }
 
@@ -919,6 +956,8 @@ $('oDn').onclick=()=>applyShift(-7);
 document.querySelectorAll('#editBar [data-acc]').forEach(b=>b.onclick=()=>applyAcc(+b.dataset.acc));
 document.querySelectorAll('#editBar [data-fg]').forEach(b=>b.onclick=()=>applyFinger(b.dataset.fg));
 $('undo').onclick=undo;
+$('zIn').onclick=()=>setZoom(zoom+0.3);
+$('zOut').onclick=()=>setZoom(zoom-0.3);
 $('speed').oninput=e=>{
   if(playing){const q=qStart+(ac.currentTime-tStart)*spq();if(q>qStart){qStart=q;tStart=ac.currentTime;}}
   speed=e.target.value/100;$('speedOut').textContent=e.target.value+' %';prefs();
@@ -943,7 +982,7 @@ $('file').onchange=async e=>{
 $('score').addEventListener('click',e=>{
   if(!S||!music)return;
   const r=$('score').getBoundingClientRect();
-  const sx=(e.clientX-r.left)*vw/r.width, sy=(e.clientY-r.top)*H/r.height;
+  const sx=(e.clientX-r.left)*vbW/r.width, sy=vbY+(e.clientY-r.top)*vbH/r.height;
   if(sx<HW)return;
   const t=music.style.transform.match(/translate\(([-\d.]+)px/);const x=sx-(t?+t[1]:0);
   if(fixing){
@@ -958,6 +997,8 @@ document.addEventListener('keydown',e=>{
   if(/INPUT|SELECT/.test(e.target.tagName))return;
   if(fixing&&e.key==='ArrowUp'){e.preventDefault();applyShift(1);}
   else if(fixing&&e.key==='ArrowDown'){e.preventDefault();applyShift(-1);}
+  else if(fixing&&e.key==='ArrowRight'){e.preventDefault();moveSel(1);}
+  else if(fixing&&e.key==='ArrowLeft'){e.preventDefault();moveSel(-1);}
   else if(e.key===' '){e.preventDefault();playing?stopPlay():startPlay();}
   else if(e.key==='ArrowRight'){e.preventDefault();step(1);}
   else if(e.key==='ArrowLeft'){e.preventDefault();step(-1);}
