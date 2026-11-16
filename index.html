@@ -24,7 +24,7 @@ header select{font:600 17px var(--font);color:var(--ink);background:var(--paper)
 .sp{flex:1}
 #scoreWrap{flex:1 1 auto;min-height:200px;position:relative}
 #score{position:absolute;inset:0;width:100%;height:100%;display:block}
-#kbWrap{flex:0 0 auto;height:min(170px,24vh)}
+#kbWrap{flex:0 0 auto;height:min(215px,30vh)}
 #kb{width:100%;height:100%;display:block}
 footer{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -499,7 +499,7 @@ function build(){
     const t1=el('text',{x:tx,y:top+2*s-2.5,'text-anchor':'middle','font-size':25,'font-weight':700,'font-family':'Georgia,"Times New Roman",serif',fill:'var(--ink)'},hd);t1.textContent=S.beats;
     const t2=el('text',{x:tx,y:top+4*s-2.5,'text-anchor':'middle','font-size':25,'font-weight':700,'font-family':'Georgia,"Times New Roman",serif',fill:'var(--ink)'},hd);t2.textContent=S.beatType;
   }
-  buildEvents();buildKeyboard();fit();drawLoop();
+  buildEvents();buildKeyboard();planHands();fit();drawLoop();
 }
 
 function buildEvents(){
@@ -525,7 +525,38 @@ function buildKeyboard(){
       keys.set(m,o);whiteList.push(m);nW++;}}
   blacks.forEach(([m,x])=>{const r=el('rect',{x:x-7.5,y:0,width:15,height:70,class:'bk',rx:2},kb);keys.set(m,{el:r,black:true,cx:x,labels:[]});});
   handG=el('g',{},kb);
-  kb.setAttribute('viewBox',`-1 -1 ${nW*W+2} ${KH+2}`);
+  kb.setAttribute('viewBox',`-1 -1 ${nW*W+2} ${KH+50}`);
+}
+/* Découpe chaque main en positions stables : on avance tant que les notes à venir
+   tiennent sous les cinq doigts, et la main ne se déplace qu'une fois dépassées.
+   C'est ce qui évite qu'elle frétille à chaque note. */
+function planHands(){
+  if(!whiteList.length)return;
+  const wIdx=m=>{const i=whiteList.indexOf(m);return i<0?whiteList.indexOf(m-1):i;};
+  for(const st of [1,2]){
+    const ns=S.notes.filter(n=>!n.rest&&!n.silent&&n.staff===st).sort((a,b)=>a.t-b.t);
+    const groups=[];let g=null;
+    for(const n of ns){
+      const w=wIdx(n.midi);if(w<0){n.hg=null;continue;}
+      n.wi=w;
+      if(g&&Math.max(g.hi,w)-Math.min(g.lo,w)<=4){g.lo=Math.min(g.lo,w);g.hi=Math.max(g.hi,w);g.notes.push(n);}
+      else{g={lo:w,hi:w,notes:[n]};groups.push(g);}
+    }
+    groups.forEach(gr=>{
+      const real=gr.notes.find(n=>n.finger&&+n.finger>=1&&+n.finger<=5);
+      let base;
+      if(real)base=st===1?real.wi-(+real.finger-1):real.wi-(5-+real.finger);
+      else base=gr.lo-Math.floor((4-(gr.hi-gr.lo))/2);
+      gr.base=Math.max(0,Math.min(Math.max(0,whiteList.length-5),base));
+      gr.sure=!!real;
+      gr.fingers=[];
+      for(let f=1;f<=5;f++){
+        const j=gr.base+(st===1?f-1:5-f);
+        if(j>=0&&j<whiteList.length)gr.fingers.push({f,midi:whiteList[j]});
+      }
+      gr.notes.forEach(n=>n.hg=gr);
+    });
+  }
 }
 function lightKeys(ev){
   keys.forEach(k=>{k.el.classList.remove('s1','s2');k.labels.forEach(l=>l.remove());k.labels=[];if(k.mark)k.mark.style.display='';});
@@ -536,51 +567,35 @@ function lightKeys(ev){
   });
   drawHands(ev);
 }
-/* Position de la main : un cadre sur les touches couvertes et cinq doigts numérotés.
-   Trait plein quand le doigté vient de la partition, pointillé quand il est supposé. */
+/* La main est dessinée sous le clavier, séparée des touches, pour ne pas gêner
+   la lecture des notes. Trait plein quand le doigté vient de la partition,
+   pointillé quand il n'est que supposé. */
 function drawHands(ev){
   if(!handG||!whiteList.length)return;
-  for(const st of [1,2]){
+  const yb=KBH+12, vus=new Set();
+  for(const n of ev.notes){
+    const g=n.hg, st=n.staff;
+    if(!g||vus.has(g))continue;vus.add(g);
     if(hand!=='both'&&String(st)!==hand)continue;
-    const cur=ev.notes.filter(n=>n.staff===st);
-    if(!cur.length)continue;
-    const win=S.notes.filter(n=>!n.rest&&!n.silent&&n.staff===st&&n.m===ev.m);
-    const wIdx=m=>{let i=whiteList.indexOf(m);return i<0?whiteList.indexOf(m-1):i;};
-    const anchor=cur.find(n=>n.finger&&+n.finger>=1&&+n.finger<=5);
-    /* La note en cours sert toujours de repère, donc la main dessinée la contient forcément. */
-    const anc=anchor||cur.reduce((a,b)=>(st===1?(b.midi<a.midi?b:a):(b.midi>a.midi?b:a)),cur[0]);
-    const wi=wIdx(anc.midi);if(wi<0)continue;
-    let f0;
-    if(anchor)f0=+anchor.finger;
-    else{
-      const ws=win.map(n=>wIdx(n.midi)).filter(i=>i>=0);
-      const low=ws.length?Math.min(...ws,wi):wi;
-      const off=Math.min(4,Math.max(0,wi-low));
-      f0=st===1?1+off:5-off;
-    }
-    f0=Math.max(1,Math.min(5,f0));
-    const dir=st===1?1:-1, col=st===1?'var(--rh)':'var(--lh)', sure=!!anchor;
-    const ancK=keys.get(anc.midi), ancBlack=!!(ancK&&ancK.black);
-    const pos=[];
-    for(let f=1;f<=5;f++){const j=wi+dir*(f-f0);if(j>=0&&j<whiteList.length)pos.push({f,midi:whiteList[j]});}
-    if(!pos.length)continue;
-    const xs=pos.map(p=>keys.get(p.midi).cx).concat(ancK?[ancK.cx]:[]);
-    el('rect',{x:Math.min(...xs)-12,y:2,width:Math.max(...xs)-Math.min(...xs)+24,height:KBH-4,rx:9,
-      class:'hb',stroke:col,'stroke-dasharray':sure?'none':'5 4',opacity:sure?.8:.45},handG);
-    pos.forEach(p=>{
-      if(ancBlack&&p.f===f0)return;
-      const k=keys.get(p.midi);if(!k)return;
-      const on=cur.some(n=>n.midi===p.midi);
-      el('circle',{cx:k.cx,cy:86,r:9.5,fill:on?col:'var(--paper)',stroke:col,'stroke-width':1.6,opacity:sure?1:.6},handG);
-      const t=el('text',{x:k.cx,y:90,class:'hc',fill:on?'#fff':col,opacity:sure?1:.7},handG);t.textContent=p.f;
+    const col=st===1?'var(--rh)':'var(--lh)';
+    const pts=g.fingers.map(p=>({f:p.f,k:keys.get(p.midi)})).filter(p=>p.k);
+    if(!pts.length)continue;
+    const cur=ev.notes.filter(q=>q.staff===st&&q.hg===g);
+    const joues=new Set();
+    cur.forEach(q=>{
+      let f=q.finger&&+q.finger>=1&&+q.finger<=5?+q.finger
+            :(st===1?q.wi-g.base+1:5-(q.wi-g.base));
+      if(f>=1&&f<=5)joues.add(f);
     });
-    cur.forEach(n=>{
-      const k=keys.get(n.midi);if(!k)return;
-      if(!k.black&&pos.some(p=>p.midi===n.midi))return;
-      const cy=k.black?54:86;
-      el('circle',{cx:k.cx,cy,r:9.5,fill:col,stroke:col,'stroke-width':1.6},handG);
-      const lab=n.finger||(n===anc?String(f0):'');
-      if(lab){const t=el('text',{x:k.cx,y:cy+4,class:'hc',fill:'#fff'},handG);t.textContent=lab;}
+    const xs=pts.map(p=>p.k.cx);
+    el('rect',{x:Math.min(...xs)-14,y:yb,width:Math.max(...xs)-Math.min(...xs)+28,height:34,rx:13,
+      class:'hb',stroke:col,'stroke-dasharray':g.sure?'none':'5 4',opacity:g.sure?.85:.5},handG);
+    pts.forEach(p=>{
+      const on=joues.has(p.f);
+      el('circle',{cx:p.k.cx,cy:yb+17,r:10,fill:on?col:'var(--paper)',stroke:col,
+        'stroke-width':on?1.6:1.3,opacity:g.sure?1:.65},handG);
+      const t=el('text',{x:p.k.cx,y:yb+21,class:'hc',fill:on?'#fff':col,opacity:g.sure?1:.75},handG);
+      t.textContent=p.f;
     });
   }
 }
